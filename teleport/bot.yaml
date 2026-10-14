@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Gravitational, Inc.
+# The identity every kata-identity pod acts as. Audit events show bot-kata-identity
+# plus the bot instance (one per pod).
+kind: bot
+version: v1
+metadata:
+  name: kata-identity
+spec:
+  roles: ["kata-identity-agent"]

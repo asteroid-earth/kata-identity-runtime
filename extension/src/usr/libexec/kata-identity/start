@@ -1,0 +1,70 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Gravitational, Inc.
+# kata-identity: start tbot once per VM, as a transient systemd unit.
+#
+# Called by the prestart hook for every container; only the first call starts
+# anything. tbot runs as nobody, outside every container's namespaces, with its
+# config, keys and certificates on guest tmpfs that is never shared into a
+# container. Workloads reach it only through its loopback listeners.
+set -euo pipefail
+
+# shellcheck source-path=SCRIPTDIR source=common.sh
+. "$(dirname "$(readlink -f "$0")")/common.sh"
+
+mkdir -p "${KI_STATE_DIR}"
+chmod 0755 "${KI_STATE_DIR}"
+
+# Containers in one pod can be created concurrently; serialize the first start.
+exec 9>"${KI_STATE_DIR}/start.lock"
+flock -w 60 9 || { echo "kata-identity: timed out waiting for start lock" >&2; exit 1; }
+
+if [[ "$(systemctl show --property=LoadState --value "${KI_UNIT}")" == loaded ]]; then
+	# Already started by an earlier container. If it has given up, its
+	# single-use registration secret is spent (or was never valid): fail closed.
+	if systemctl is-failed --quiet "${KI_UNIT}"; then
+		echo "kata-identity: ${KI_UNIT} has failed; see 'journalctl -u ${KI_UNIT}' in the guest" >&2
+		exit 1
+	fi
+	exit 0 # running or restarting; the hook's readiness wait decides
+fi
+
+[[ -x "${KI_TBOT}" ]] || { echo "kata-identity: no tbot for $(uname -m) at ${KI_TBOT}" >&2; exit 1; }
+
+# Expose the verified tbot directory read-only where user nobody can reach it.
+if ! mountpoint -q "${KI_TBOT_BIND_DIR}"; then
+	mkdir -p "${KI_TBOT_BIND_DIR}"
+	mount --bind "${KI_TBOT_DIR}" "${KI_TBOT_BIND_DIR}"
+	mount -o remount,bind,ro,nosuid,nodev "${KI_TBOT_BIND_DIR}"
+fi
+
+# Render first: a bad or missing parameter fails here, before tbot ever runs.
+tmp="$(mktemp "${KI_STATE_DIR}/tbot.yaml.XXXXXX")"
+"${KI_LIBEXEC}/render-config" >"${tmp}"
+chown root:nogroup "${tmp}"
+chmod 0640 "${tmp}"
+mv -f "${tmp}" "${KI_CONFIG}"
+
+systemd-run --quiet --unit="${KI_UNIT}" \
+	--description="Teleport tbot (kata-identity)" \
+	--property=User=nobody \
+	--property=Group=nogroup \
+	--property=RuntimeDirectory="${KI_TBOT_STORAGE#/run/}" \
+	--property=RuntimeDirectoryMode=0700 \
+	--property=RuntimeDirectoryPreserve=yes \
+	--property=NoNewPrivileges=yes \
+	--property=CapabilityBoundingSet= \
+	--property=ProtectSystem=strict \
+	--property=ProtectHome=yes \
+	--property=PrivateTmp=yes \
+	--property=PrivateDevices=yes \
+	--property=ProtectKernelTunables=yes \
+	--property=ProtectKernelModules=yes \
+	--property=ProtectControlGroups=yes \
+	--property=LockPersonality=yes \
+	--property=Restart=on-failure \
+	--property=RestartSec=2s \
+	--property=StartLimitIntervalSec=60s \
+	--property=StartLimitBurst=4 \
+	--setenv=TELEPORT_ANONYMOUS_TELEMETRY=0 \
+	"${KI_TBOT_BIND_DIR}/$(basename "${KI_TBOT}")" start -c "${KI_CONFIG}"

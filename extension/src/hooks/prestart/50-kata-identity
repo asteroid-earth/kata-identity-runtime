@@ -1,0 +1,39 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Gravitational, Inc.
+# kata-identity: OCI prestart hook.
+#
+# kata-agent runs every executable in <guest_hook_path>/prestart/ in the guest's
+# root namespaces before each container's process starts. The RuntimeClass
+# points guest_hook_path at /run/kata-extensions/identity/hooks, so this hook
+# ships inside the extension and the stock guest image stays unmodified.
+#
+# It starts tbot (first container only), then blocks until tbot reports ready.
+# A non-zero exit fails the container's creation: a pod on this RuntimeClass
+# never runs a workload without its identity.
+set -uo pipefail
+
+# shellcheck source=../../usr/libexec/kata-identity/common.sh
+. /run/kata-extensions/identity/usr/libexec/kata-identity/common.sh
+
+cat >/dev/null 2>&1 || true # OCI container state on stdin; not needed
+
+mkdir -p "${KI_STATE_DIR}"
+log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >>"${KI_LOG}"; }
+fail() {
+	log "FAIL: $*"
+	echo "kata-identity: $*" >&2
+	exit 1
+}
+
+if ! out="$("${KI_LIBEXEC}/start" 2>&1)"; then
+	fail "could not start tbot: ${out}"
+fi
+
+timeout="$(ki_cmdline_get tbot.timeout || true)"
+[[ "${timeout:-}" =~ ^[0-9]+$ ]] || timeout=120
+
+if ! out="$("${KI_TBOT}" wait --diag-addr="$(ki_diag_addr)" --timeout="${timeout}s" 2>&1)"; then
+	fail "tbot not ready after ${timeout}s (journalctl -u ${KI_UNIT}): $(printf '%s\n' "${out}" | tail -n 1)"
+fi
+log "tbot ready"

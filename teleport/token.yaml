@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Gravitational, Inc.
+# One join token per pod. bound_keypair with recovery limit 1: the registration
+# secret Teleport generates is usable exactly once, for the pod's first join.
+# Rename for each pod (metadata.name), then read its secret:
+#   tctl get token/<name> --format=json | jq -r '.[0].status.bound_keypair.registration_secret'
+kind: token
+version: v2
+metadata:
+  name: kata-identity-example
+spec:
+  roles: [Bot]
+  bot_name: kata-identity
+  join_method: bound_keypair
+  bound_keypair:
+    recovery:
+      mode: standard
+      limit: 1

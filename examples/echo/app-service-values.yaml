@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Gravitational, Inc.
+# teleport-kube-agent Helm values: a Teleport Application Service that publishes
+# the echo server as app "kata-identity-echo", labelled for teleport/role.yaml.
+#
+# Replace TELEPORT_PROXY (host:port). Set enterprise: false for a self-hosted
+# Teleport Community Edition cluster. The join token is passed with --set.
+roles: app
+proxyAddr: TELEPORT_PROXY
+enterprise: true
+joinParams:
+  method: token
+apps:
+  - name: kata-identity-echo
+    uri: http://kata-identity-echo.kata-identity-demo.svc.cluster.local
+    labels:
+      kata-identity: allowed

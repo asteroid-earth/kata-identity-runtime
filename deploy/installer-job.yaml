@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Gravitational, Inc.
+# One-shot install of the extension image on ONE node, at /opt/kata-identity/.
+# Rendered and run once per Kata node by deploy/install.sh (NODE, IMAGE).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kata-identity-install-NODE
+  namespace: kata-identity-system
+  labels:
+    app.kubernetes.io/name: kata-identity-installer
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kata-identity-installer
+    spec:
+      nodeName: NODE
+      restartPolicy: Never
+      containers:
+        - name: install
+          image: IMAGE
+          # Copy then rename: VMs already running keep the old file.
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              cp /kata-identity-extension.img /host/.kata-identity-extension.img.new
+              mv -f /host/.kata-identity-extension.img.new /host/kata-identity-extension.img
+              cp /root_hash_identity-extension.txt /host/root_hash_identity-extension.txt
+              cat /host/root_hash_identity-extension.txt
+          securityContext:
+            runAsUser: 0
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+          volumeMounts:
+            - { name: host, mountPath: /host }
+      volumes:
+        - name: host
+          hostPath:
+            path: /opt/kata-identity
+            type: DirectoryOrCreate

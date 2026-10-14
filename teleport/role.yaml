@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Gravitational, Inc.
+# What kata-identity workloads may reach. Grant the minimum: workloads only get
+# loopback access to what this role allows, for the life of the pod.
+kind: role
+version: v7
+metadata:
+  name: kata-identity-agent
+spec:
+  allow:
+    # Apps and MCP servers (tbot.app_proxy / tbot.app.NAME). Label the apps you
+    # want workloads to reach, or change this selector to match existing labels.
+    app_labels:
+      kata-identity: allowed
+    mcp:
+      tools: ["*"]
+    # Databases (tbot.db.SERVICE=PORT:USER:DB).
+    db_labels:
+      kata-identity: allowed
+    db_users: ["readonly"]
+    db_names: ["*"]
+  options:
+    max_session_ttl: 1h

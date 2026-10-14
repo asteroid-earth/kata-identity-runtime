@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Gravitational, Inc.
+# A tiny HTTP server that prints every request header back, including the
+# signed teleport-jwt-assertion Teleport adds to app-access requests.
+# Published to Teleport by app-service-values.yaml as app "kata-identity-echo".
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kata-identity-demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kata-identity-echo
+  namespace: kata-identity-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: kata-identity-echo }
+  template:
+    metadata:
+      labels: { app: kata-identity-echo }
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami:v1.11
+          ports:
+            - containerPort: 80
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 32Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kata-identity-echo
+  namespace: kata-identity-demo
+spec:
+  selector: { app: kata-identity-echo }
+  ports:
+    - port: 80
+      targetPort: 80

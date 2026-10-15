@@ -8,10 +8,12 @@ metadata:
   name: kata-identity-agent
 spec:
   allow:
-    # Apps and MCP servers (tbot.app_proxy / tbot.app.NAME). Label the apps you
-    # want workloads to reach, or change this selector to match existing labels.
+    # HTTP apps (tbot.app_proxy / tbot.app.NAME). Label the apps you want
+    # workloads to reach, or change this selector to match existing labels.
     app_labels:
       kata-identity: allowed
+    # MCP servers aren't reachable through tbot's app proxy yet (README, Limits);
+    # this grant only takes effect once they are.
     mcp:
       tools: ["*"]
     # Databases (tbot.db.SERVICE=PORT:USER:DB).

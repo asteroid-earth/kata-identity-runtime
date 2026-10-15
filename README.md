@@ -3,14 +3,14 @@
 **Runtime identity for any container.** Pods on the `kata-identity` RuntimeClass run in a
 [Kata Containers](https://katacontainers.io) microVM that already holds a short-lived
 [Teleport](https://goteleport.com) identity before the container starts. The container
-image needs no changes and never sees a key. It reaches Teleport-protected apps, MCP
-servers and databases through `tbot` listeners on `127.0.0.1`.
+image needs no changes and never sees a key. It reaches Teleport-protected HTTP apps and
+databases through `tbot` listeners on `127.0.0.1`.
 
 ```
 Kata microVM (stock guest image)
 ├─ identity extension (read-only, dm-verity) ── tbot, outside every container
 │    prestart hook: start tbot, block each container until tbot is ready
-└─ your container (any image) ──> 127.0.0.1:<port> ──> Teleport ──> apps / MCP / DBs
+└─ your container (any image) ──> 127.0.0.1:<port> ──> Teleport ──> HTTP apps / DBs
 ```
 
 Only stock Kata 4.x mechanisms are used: a
@@ -141,8 +141,8 @@ Add an echo app published through Teleport. A request to it shows the signed ide
 Teleport attaches. This needs a Teleport Application Service; the example installs one.
 
 The echo app is **not** a Kata pod. It's an ordinary pod (normal runtime) published by a
-Teleport Application Service. It stands in for whatever an AI agent calls, such as an
-internal API or an MCP server. The alpine pod is the client; the echo app is the
+Teleport Application Service. It stands in for whatever an AI agent calls over HTTP,
+such as an internal API. The alpine pod is the client; the echo app is the
 destination, and it simply echoes back the identity Teleport attached to the request.
 
 ```bash
@@ -179,6 +179,18 @@ See [extension/README.md](extension/README.md) for the full list.
 - **The workload can read its pod's `tbot.secret`.** That's harmless because the secret is
   spent on first join, before the container starts. Always use one token per pod.
 - **No Kubernetes or SSH access** through `tbot` listeners.
+- **No MCP servers yet. This is a gap in tbot's app proxy.** MCP servers enrolled in
+  Teleport (the MCP app type) aren't reachable through `tbot.app_proxy`: requests return
+  HTTP 500, while plain HTTP apps through the same proxy work. `tbot.app.*` tunnels use
+  the same app-access path and are expected to behave the same (untested). Teleport's
+  documented path for bots is `tsh mcp connect` with an identity file, which would put a
+  credential in the workload. Tested with an SSE MCP server on Teleport 18.11.
+- **Per-pod options must fit on the guest kernel command line (about 2 KB).** That leaves
+  room for roughly 25–40 `tbot.app.*`/`tbot.db.*` tunnels; `tbot.app_proxy` reaches any
+  number of apps with one entry. If you outgrow it, ship a full `tbot.yaml` per
+  RuntimeClass in a second, small extension image. `guest_extension_images` accepts
+  several entries, each mounted read-only with dm-verity. Keep only the token and secret
+  per pod. This isn't implemented here.
 
 ## License
 

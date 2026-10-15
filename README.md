@@ -91,7 +91,7 @@ environment (your registry, your Teleport proxy, and the namespace of your kata-
 release):
 
 ```bash
-export REGISTRY=docker.io/example TELEPORT_PROXY=example.teleport.sh:443 KATA_DEPLOY_NS=kube-system
+export REGISTRY=docker.io/example TELEPORT_PROXY=example.teleport.sh:443 KATA_DEPLOY_NS=default
 ```
 
 ## 1. Build the extension

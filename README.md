@@ -52,11 +52,29 @@ containerd on each node, one at a time. Schedule it like any containerd restart.
 
 **To remove:**
 
-1. `helm upgrade` the kata-deploy release with `--reuse-values --set customRuntimes.enabled=false`,
-   or with your previous values.
-2. Delete `/opt/kata-identity/` on the nodes, and the `kata-identity-system` namespace.
-3. In Teleport: `tctl bots rm kata-identity`, `tctl rm role/kata-identity-agent`, and
-   `tctl rm token/<name>` for any unused tokens.
+Drop the custom runtime from kata-deploy (or upgrade with your previous values). The
+variables are set under [Prerequisites](#prerequisites):
+
+```bash
+helm upgrade kata-deploy oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy \
+  --version 4.2.0 -n "$KATA_DEPLOY_NS" --reuse-values --set customRuntimes.enabled=false
+```
+
+Delete the installer namespace, then `/opt/kata-identity/` on each Kata node:
+
+```bash
+kubectl delete namespace kata-identity-system
+```
+
+Remove the Teleport resources, plus `tctl rm token/<name>` for any unused tokens:
+
+```bash
+tctl bots rm kata-identity
+```
+
+```bash
+tctl rm role/kata-identity-agent
+```
 
 ## Prerequisites
 
@@ -67,6 +85,14 @@ containerd on each node, one at a time. Schedule it like any containerd restart.
   with the **`editor`** role.
 - A build host with Docker able to run privileged containers (Linux, Docker Desktop or
   OrbStack), and a container registry your nodes can pull from.
+
+Run every command from the repository root, in one shell, after setting these for your
+environment (your registry, your Teleport proxy, and the namespace of your kata-deploy
+release):
+
+```bash
+export REGISTRY=docker.io/example TELEPORT_PROXY=example.teleport.sh:443 KATA_DEPLOY_NS=kube-system
+```
 
 ## 1. Build the extension
 
@@ -80,10 +106,17 @@ plus `build/root_hash_identity-extension.txt` (its dm-verity parameters). Set
 
 ## 2. Install it on the Kata nodes
 
+Package the image for your nodes:
+
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -f deploy/installer/Dockerfile -t $REGISTRY/kata-identity-extension:v1 --push .
-deploy/install.sh $REGISTRY/kata-identity-extension:v1
+  -f deploy/installer/Dockerfile -t "$REGISTRY/kata-identity-extension:v1" --push .
+```
+
+Copy it onto every Kata node:
+
+```bash
+deploy/install.sh "$REGISTRY/kata-identity-extension:v1"
 ```
 
 This runs one Job per Kata node and prints the dm-verity root hash each node now has.
@@ -92,48 +125,83 @@ or after rebuilding the extension.
 
 ## 3. Add the `kata-identity` RuntimeClass
 
+Render the Helm values with your proxy and the image's dm-verity parameters:
+
 ```bash
-sed -e "s#TELEPORT_PROXY#example.teleport.sh:443#" \
+sed -e "s#TELEPORT_PROXY#$TELEPORT_PROXY#" \
     -e "s#VERITY_PARAMS#$(cat build/root_hash_identity-extension.txt)#" \
     deploy/kata-deploy-values.yaml > /tmp/kata-identity-values.yaml
+```
+
+Add them to your kata-deploy release:
+
+```bash
 helm upgrade kata-deploy oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy \
-  --version 4.2.0 -n <kata-deploy-namespace> --reuse-values -f /tmp/kata-identity-values.yaml
+  --version 4.2.0 -n "$KATA_DEPLOY_NS" --reuse-values -f /tmp/kata-identity-values.yaml
+```
+
+kata-deploy rolls node by node and restarts containerd on each one. When it's done, the
+RuntimeClass exists:
+
+```bash
 kubectl get runtimeclass kata-identity
 ```
 
-kata-deploy rolls node by node and restarts containerd on each one. Rebuilding the
-extension changes `VERITY_PARAMS`, so repeat steps 2 and 3 after a rebuild.
+Rebuilding the extension changes `VERITY_PARAMS`, so repeat steps 2 and 3 after a rebuild.
 
 ## 4. Create the Teleport bot and role
 
-Edit `teleport/role.yaml` to select the apps and databases workloads may reach, then:
+Edit `teleport/role.yaml` to select the apps and databases workloads may reach, then
+create the role and the bot:
 
 ```bash
 tctl create -f teleport/role.yaml
+```
+
+```bash
 tctl create -f teleport/bot.yaml
 ```
 
 ## 5. Run an identified container
 
-Each pod needs its own single-use join token:
+Each pod needs its own single-use join token. Pick a token name:
 
 ```bash
 TOKEN=kata-identity-$(date +%s)
-sed "s/kata-identity-example/$TOKEN/" teleport/token.yaml | tctl create -f /dev/stdin
-SECRET=$(tctl get token/$TOKEN --format=json | jq -r '.[0].status.bound_keypair.registration_secret')
-sed -e "s/TOKEN_NAME/$TOKEN/" -e "s/REGISTRATION_SECRET/$SECRET/" examples/alpine.yaml | kubectl apply -f -
 ```
 
-Check it:
+Create the token:
 
 ```bash
-kubectl logs identity-demo                      # tbot status: "healthy"
-kubectl exec identity-demo -- env http_proxy=http://127.0.0.1:8080 wget -qO- http://<app-name>/
-tctl bots instances list kata-identity         # one instance per pod
+sed "s/kata-identity-example/$TOKEN/" teleport/token.yaml | tctl create -f /dev/stdin
+```
+
+Read its registration secret:
+
+```bash
+SECRET=$(tctl get "token/$TOKEN" --format=json | jq -r '.[0].status.bound_keypair.registration_secret')
+```
+
+Start the pod with both:
+
+```bash
+sed -e "s/TOKEN_NAME/$TOKEN/" -e "s/REGISTRATION_SECRET/$SECRET/" examples/alpine.yaml | kubectl apply -f -
 ```
 
 The pod never starts without its identity. If `tbot` can't join (bad token, secret
 already used, proxy unreachable), container creation fails.
+
+Check it. The pod's log shows `tbot`'s status, `"healthy"`:
+
+```bash
+kubectl logs identity-demo
+```
+
+Teleport shows one bot instance per pod:
+
+```bash
+tctl bots instances list kata-identity
+```
 
 ## See the identity (optional)
 
@@ -145,13 +213,44 @@ Teleport Application Service. It stands in for whatever an AI agent calls over H
 such as an internal API. The alpine pod is the client; the echo app is the
 destination, and it simply echoes back the identity Teleport attached to the request.
 
+Deploy the echo app (namespace `kata-identity-demo`):
+
+```bash
+kubectl apply -f examples/echo/echo.yaml
+```
+
+Create a join token for the Application Service:
+
+```bash
+APP_TOKEN=$(tctl tokens add --type=app --ttl=15m --format=text)
+```
+
+Render its Helm values with your proxy:
+
+```bash
+sed "s#TELEPORT_PROXY#$TELEPORT_PROXY#" examples/echo/app-service-values.yaml > /tmp/echo-values.yaml
+```
+
+Install the Application Service:
+
 ```bash
 helm repo add teleport https://charts.releases.teleport.dev
-kubectl apply -f examples/echo/echo.yaml
-APP_TOKEN=$(tctl tokens add --type=app --ttl=15m --format=text)
-sed "s#TELEPORT_PROXY#example.teleport.sh:443#" examples/echo/app-service-values.yaml > /tmp/echo-values.yaml
+```
+
+```bash
 helm install kata-identity-echo-agent teleport/teleport-kube-agent -n kata-identity-demo \
-  -f /tmp/echo-values.yaml --set joinParams.tokenName=$APP_TOKEN
+  -f /tmp/echo-values.yaml --set joinParams.tokenName="$APP_TOKEN"
+```
+
+Call the app from the alpine pod through its `tbot` app proxy:
+
+```bash
+kubectl exec identity-demo -- env http_proxy=http://127.0.0.1:8080 wget -qO- http://kata-identity-echo/
+```
+
+Or decode just the identity Teleport attached:
+
+```bash
 examples/echo/check-identity.sh identity-demo
 ```
 

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Gravitational, Inc.
 # Tests for render-config. Run inside a Linux container with bash 4+:
-#   docker run --rm -v "$PWD":/x -w /x ubuntu:24.04 bash test/render-test.sh
+#   docker run --rm -v "$PWD/extension":/x -w /x ubuntu:24.04 bash test/render-test.sh   (from the repo root)
 #
 # Optionally set TBOT_BIN to a tbot binary for the container's architecture to
 # also check that tbot itself accepts the full rendered configuration.

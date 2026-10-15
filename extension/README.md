@@ -68,8 +68,10 @@ Ports must be 1024–65535 and unique; `tbot` runs unprivileged.
 
 ## Build
 
+From the repository root (`KATA_VERSION=4.2.0` and `TBOT_VERSION=18.11.2` by default):
+
 ```bash
-extension/build.sh        # KATA_VERSION=4.2.0 TBOT_VERSION=18.11.2 by default
+extension/build.sh
 ```
 
 This fetches Kata's `tools/osbuilder` at `KATA_VERSION` and `tbot` at `TBOT_VERSION`
@@ -87,17 +89,42 @@ Desktop or OrbStack).
 
 `render-test.sh` checks the config renderer. `guest-test.sh` boots the **stock Kata guest
 root filesystem** as a systemd container, mounts the built extension through dm-verity,
-and runs the real hook, covering both the fail-closed path and a real join.
+and runs the real hook, covering both the fail-closed path and a real join. Run them
+from the repository root after a build.
+
+The fail-closed path (no token, so the hook must refuse the container):
 
 ```bash
 extension/test/guest-test.sh failure
+```
+
+A real join, with a fresh token and secret from your Teleport cluster and an app the bot's
+role allows:
+
+```bash
 TBOT_PROXY=host:443 TBOT_TOKEN=name TBOT_SECRET=secret TEST_APP=app extension/test/guest-test.sh success
-docker run --rm -v "$PWD":/x -w /x ubuntu:24.04 bash test/render-test.sh
-# also check that tbot accepts the rendered config (binary for the container's arch):
-docker run --rm -v "$PWD":/x -v "$PWD/../.cache/tbot-18.11.2":/t -w /x \
+```
+
+The config renderer:
+
+```bash
+docker run --rm -v "$PWD/extension":/x -w /x ubuntu:24.04 bash test/render-test.sh
+```
+
+The same, also checking that `tbot` accepts every rendered config (use the binary for the
+container's architecture, `tbot-x86_64` or `tbot-aarch64`):
+
+```bash
+docker run --rm -v "$PWD/extension":/x -v "$PWD/.cache/tbot-18.11.2":/t -w /x \
   -e TBOT_BIN=/t/tbot-aarch64 ubuntu:24.04 bash test/render-test.sh
-docker run --rm -v "$PWD":/x -w /x koalaman/shellcheck:stable -x -s bash \
-  src/usr/libexec/kata-identity/{common.sh,render-config,start} test/render-test.sh
+```
+
+Lint the scripts:
+
+```bash
+docker run --rm -v "$PWD/extension":/x -w /x koalaman/shellcheck:stable -x -s bash \
+  src/usr/libexec/kata-identity/common.sh src/usr/libexec/kata-identity/render-config \
+  src/usr/libexec/kata-identity/start test/render-test.sh
 ```
 
 ## License

@@ -24,7 +24,7 @@ an OCI guest hook and kernel parameters. Details: [extension/README.md](extensio
 | `extension/` | The guest extension. `src/` is its contents (the prestart hook and the `tbot` start and config scripts). `build.sh` downloads `tbot` and builds the image with Kata's image builder. `test/` has the config-renderer tests and a test that runs the extension in the stock Kata guest userland. Its [README](extension/README.md) is the reference for all `tbot.*` options. | step 1 |
 | `deploy/` | Cluster installation. `installer/Dockerfile` packages the built image. `install.sh` runs `installer-job.yaml` once per Kata node, copying the image to `/opt/kata-identity/`; nothing stays running. `kata-deploy-values.yaml` holds the Helm values that add the `kata-identity` RuntimeClass to kata-deploy. | steps 2–3 |
 | `teleport/` | Teleport resources: `role.yaml` (what workloads may reach), `bot.yaml` (the identity pods act as), `token.yaml` (a single-use join token per pod). | steps 4–5 |
-| `examples/` | `alpine.yaml` is an unmodified alpine container with an identity. `echo/` is an optional echo app published through Teleport, plus `check-identity.sh` to show a pod's identity. | step 5, optional |
+| `examples/` | `alpine.yaml` is an unmodified alpine container with an identity (the client). `echo/` is an optional, ordinary (non-Kata) echo app published through Teleport as a call target, plus `check-identity.sh` to show a pod's identity. | step 5, optional |
 | `build/`, `.cache/` | Created by `extension/build.sh` and not committed. `build/` holds the output (`kata-identity-extension.img` and its dm-verity parameters). `.cache/` holds the downloaded `tbot` binaries and Kata `osbuilder` checkout. | steps 1–3 |
 
 ## What changes in your cluster
@@ -139,6 +139,11 @@ already used, proxy unreachable), container creation fails.
 
 Add an echo app published through Teleport. A request to it shows the signed identity
 Teleport attaches. This needs a Teleport Application Service; the example installs one.
+
+The echo app is **not** a Kata pod. It's an ordinary pod (normal runtime) published by a
+Teleport Application Service. It stands in for whatever an AI agent calls, such as an
+internal API or an MCP server. The alpine pod is the client; the echo app is the
+destination, and it simply echoes back the identity Teleport attached to the request.
 
 ```bash
 helm repo add teleport https://charts.releases.teleport.dev

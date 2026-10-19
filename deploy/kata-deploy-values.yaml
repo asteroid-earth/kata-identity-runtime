@@ -10,7 +10,7 @@ customRuntimes:
   enabled: true
   runtimes:
     identity:
-      baseConfig: "qemu-runtime-rs"   # stock 4.x shim, amd64 and arm64
+      baseConfig: "kata-qemu"   # stock 4.x shim, amd64 and arm64
       dropIn: |
         [hypervisor.qemu]
         # Stock default params, plus the cluster-wide tbot setting. Per-pod values

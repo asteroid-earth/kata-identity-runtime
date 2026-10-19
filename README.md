@@ -36,9 +36,16 @@ an OCI guest hook and kernel parameters. Details: [extension/README.md](extensio
   rootfs. `deploy/install.sh` places it with one short-lived Job per node, in namespace
   `kata-identity-system`. Nothing stays running.
 - **One kata-deploy custom runtime:** the `kata-identity` RuntimeClass and handler. Its
-  config is the stock `qemu-runtime-rs` config plus a drop-in that attaches the extension
-  and sets the hook path and `tbot.proxy`. kata-deploy adds the handler to the containerd
-  config it already manages.
+  config is the stock `qemu` config (Kata's Go shim) plus a drop-in that attaches the
+  extension and sets the hook path and `tbot.proxy`. kata-deploy adds the handler to the
+  containerd config it already manages.
+
+> [!NOTE]
+> The base is `qemu` rather than kata-deploy's default `qemu-runtime-rs` (the Rust shim)
+> because the Rust shim needs fuller D-Bus support on the node than some environments
+> provide, kind clusters for example. The extension, hook and per-pod `kernel_params`
+> work the same on both; `qemu` simply runs in more places. To use the Rust shim instead,
+> set `baseConfig: "qemu-runtime-rs"` in `deploy/kata-deploy-values.yaml`.
 - **In Teleport:** one role, one bot, and a single-use token per pod.
 
 **Unchanged:**
@@ -79,7 +86,9 @@ tctl rm role/kata-identity-agent
 ## Prerequisites
 
 - A running Kubernetes cluster that can run **Kata ≥ 4.2.0**, installed with the
-  `kata-deploy` Helm chart (the `qemu-runtime-rs` shim; amd64 or arm64 nodes).
+  `kata-deploy` Helm chart, with its `qemu` shim available (it is by default; amd64 or
+  arm64 nodes). See the note under [What changes in your cluster](#what-changes-in-your-cluster)
+  for why `qemu` rather than `qemu-runtime-rs`.
 - `kubectl`, `helm` and `jq`.
 - A Teleport cluster (≥ 18.1, for `bound_keypair` joining) and `tctl` logged in as a user
   with the **`editor`** role.

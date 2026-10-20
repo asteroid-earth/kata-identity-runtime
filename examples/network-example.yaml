@@ -22,7 +22,15 @@ spec:
     - {port: 53, protocol: UDP}
     - {port: 53, protocol: TCP}
   - to:                      # the Teleport proxy, nothing else
-    - ipBlock: {cidr: 203.0.113.10/32}
+    - ipBlock: cidr: {44.198.252.22/32}
+    ports:
+    - {port: 443, protocol: TCP}
+  - to:                      # the Teleport proxy, nothing else
+    - ipBlock: cidr: {44.213.172.215/32}
+    ports:
+    - {port: 443, protocol: TCP}
+  - to:                      # the Teleport proxy, nothing else
+    - ipBlock: cidr: {44.217.250.22/32}
     ports:
     - {port: 443, protocol: TCP}
 ---
